@@ -23,12 +23,15 @@ PopupWindow {
 
   readonly property var coordinatorKey: owner || root
   readonly property var anchorWindow: anchorItem ? anchorItem.QsWindow.window : null
+  readonly property Item anchorSurfaceItem: anchorWindow
+    ? ("panelSurfaceItem" in anchorWindow ? anchorWindow.panelSurfaceItem : anchorWindow.contentItem) : null
   readonly property var popupScreen: anchorWindow ? anchorWindow.screen : null
   readonly property bool containsMouse: cardHover.hovered
   readonly property real screenW: popupScreen ? popupScreen.width : 0
   readonly property real screenH: popupScreen ? popupScreen.height : 0
-  readonly property real barW: anchorWindow ? anchorWindow.width : 0
-  readonly property real barH: anchorWindow ? anchorWindow.height : 0
+  readonly property bool drawerAnchor: !!anchorWindow && "pluginDrawerSurface" in anchorWindow && anchorWindow.pluginDrawerSurface === true
+  readonly property real barW: anchorWindow ? (drawerAnchor ? anchorWindow.drawerBarWidth : anchorWindow.width) : 0
+  readonly property real barH: anchorWindow ? (drawerAnchor ? anchorWindow.drawerBarHeight : anchorWindow.height) : 0
   readonly property real availableCardWidth: screenW > 0
     ? Math.max(120, screenW - ((bar && (bar.position === "left" || bar.position === "right")) ? barW : 0) - root.margin * 2)
     : 0
@@ -116,6 +119,13 @@ PopupWindow {
       var window = target.QsWindow.window
       if (!window) return
 
+      if (root.drawerAnchor) {
+        var drawerPoint = root.anchorSurfaceItem.mapFromItem(target, localX, localY)
+        popupAnchor.rect.x = Math.round(Math.max(root.margin, Math.min(drawerPoint.x, window.width - popupWidth - root.margin)))
+        popupAnchor.rect.y = Math.round(Math.max(root.margin, Math.min(drawerPoint.y, window.height - popupHeight - root.margin)))
+        return
+      }
+
       if (root.centerOnBar) {
         var cx = 0;
         var cy = 0;
@@ -134,7 +144,7 @@ PopupWindow {
         return
       }
 
-      var point = window.contentItem.mapFromItem(target, localX, localY)
+      var point = root.anchorSurfaceItem.mapFromItem(target, localX, localY)
 
       if (root.bar.position === "top" || root.bar.position === "bottom") {
         point.x = Math.max(root.margin, Math.min(point.x, window.width - popupWidth - root.margin))
