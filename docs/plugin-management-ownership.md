@@ -1,0 +1,11 @@
+# Plugin management ownership proposal
+
+Omarchy owns activation, service lifecycles and bar ordering. A visibility controller may move retained widget instances between host surfaces, but must not treat hiding as disabling. Service polling, IPC and notifications remain active until the plugin is disabled according to the host lifecycle. Authentication services remain inaccessible to third-party plugins.
+
+The update CLI skips root symlinks, preserving development sources. It also conservatively skips installations with a Plugin Workbench deployment or marketplace receipt under `${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/plugin-workbench`. These existing receipt paths are an interoperability rule for this candidate, not a new upstream ownership API. A stale receipt requires owner inspection; automatic adoption or receipt deletion is deliberately absent.
+
+Direct Git updates validate a detached checkout outside the watched tree, then recheck the installed revision and cleanliness before applying the reviewed fast-forward. This prevents known-invalid candidate files from entering the running tree. Updating a normal Git directory is still not an atomic tree exchange; filesystem writers outside this CLI do not share a lock. A future host transaction API should offer atomic publication and a generic owner registration contract.
+
+`omarchy-plugin-watch` watches the root and canonical linked plugin directories with manifests. It maps external events back to installed IDs, rebuilds watches on root entry changes, and excludes `.git` and `target`. It does not recursively search the user's home for projects. Existing shell reload coalescing remains in the host. The real-inotify fixture covers direct edits, external source edits and atomic link retargeting.
+
+The Drawer API 1 candidate retains the four-file host extension with an explicit version marker on `PluginBarApi`. It makes no change to authentication or service-access facades. Acceptance before upstream submission must cover multiple monitors, all four bar edges, fractional scaling, keyboard focus restoration, simple widgets and widgets backed by polling services, plus popup stacking and drag/drop. The headless fixtures cannot establish those desktop properties.
