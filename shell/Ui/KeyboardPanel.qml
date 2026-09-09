@@ -47,6 +47,8 @@ PanelWindow {
   property var borderSpec: Border.surfaceSpec("popups", "border", Color.popups.border, Math.max(1, Style.space(2)))
   property bool centerOnBar: false
   property bool open: false
+  // Hosts retaining popup descendants keep an invisible, input-empty parent.
+  property bool retainWindow: false
   property int gap: Style.gapsOut  // distance between bar edge and panel
   property bool popoutSwitching: false
   property bool popoutSwitchClosing: false
@@ -61,9 +63,12 @@ PanelWindow {
   property Item focusTarget: null
 
   default property alias contentItem: contentHolder.children
+  readonly property Item panelSurfaceItem: card.parent
 
   readonly property var coordinatorKey: owner || root
   readonly property var anchorWindow: anchorItem ? anchorItem.QsWindow.window : null
+  readonly property Item anchorSurfaceItem: anchorWindow
+    ? ("panelSurfaceItem" in anchorWindow ? anchorWindow.panelSurfaceItem : anchorWindow.contentItem) : null
   readonly property string barPos: bar ? bar.position : "top"
 
   function close() {
@@ -78,7 +83,7 @@ PanelWindow {
   // --- screen + lifetime ---------------------------------------------------
 
   screen: anchorWindow ? anchorWindow.screen : null
-  visible: open || card.opacity > 0 || popoutSwitching
+  visible: open || card.opacity > 0 || popoutSwitching || retainWindow
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
 
@@ -122,8 +127,8 @@ PanelWindow {
     return Math.max(bar.barSize, actual) + root.gap
   }
   mask: Region {
-    width: root.screenW
-    height: root.screenH
+    width: root.retainWindow && !root.open ? 0 : root.screenW
+    height: root.retainWindow && !root.open ? 0 : root.screenH
   }
 
   // Track every layout change between the bar's contentItem and the
@@ -132,7 +137,7 @@ PanelWindow {
   // actually reactive — mapToItem on its own is a one-shot.
   TransformWatcher {
     id: anchorWatcher
-    a: anchorWindow ? anchorWindow.contentItem : null
+    a: root.anchorSurfaceItem
     b: anchorItem
   }
 
@@ -144,7 +149,7 @@ PanelWindow {
   readonly property point anchorScreenPos: {
     anchorWatcher.transform  // reactive dependency
     if (!anchorItem || !anchorWindow) return Qt.point(0, 0)
-    return anchorItem.mapToItem(anchorWindow.contentItem, 0, 0)
+    return anchorItem.mapToItem(root.anchorSurfaceItem, 0, 0)
   }
   readonly property real anchorW: anchorItem ? anchorItem.width : 0
   readonly property real anchorH: anchorItem ? anchorItem.height : 0
@@ -189,8 +194,9 @@ PanelWindow {
   // parallel axis (along the bar) the anchor item's reported position is
   // still consistent with the bar content origin, so it's accurate for
   // centering the card under the icon.
-  readonly property real barW: anchorWindow ? anchorWindow.width : screenW
-  readonly property real barH: anchorWindow ? anchorWindow.height : 0
+  readonly property bool drawerAnchor: !!anchorWindow && "pluginDrawerSurface" in anchorWindow && anchorWindow.pluginDrawerSurface === true
+  readonly property real barW: anchorWindow ? (drawerAnchor ? anchorWindow.drawerBarWidth : anchorWindow.width) : 0
+  readonly property real barH: anchorWindow ? (drawerAnchor ? anchorWindow.drawerBarHeight : anchorWindow.height) : 0
   readonly property point cardOrigin: {
     if (!anchorItem || !bar) return Qt.point(margin, margin)
     var x = 0, y = 0
@@ -306,8 +312,14 @@ PanelWindow {
       for (var i = targets.length - 1; i >= 0; i--) {
         var target = targets[i]
         if (!target || !target.triggerPress || target.visible === false || target.opacity === 0 || !target.mapToItem) continue
-        if (root.bar.targetBelongsToWindow && !root.bar.targetBelongsToWindow(target, root.anchorWindow)) continue
-        var pos = root.anchorWindow.itemPosition(target)
+        // A nested drawer popup is anchored to a fullscreen surface; visible
+        // bar targets still belong to the original thin bar on this screen.
+        var targetWindow = root.drawerAnchor && target.QsWindow ? target.QsWindow.window : root.anchorWindow
+        if (!targetWindow) continue
+        if (root.drawerAnchor && (targetWindow === root.anchorWindow || targetWindow.screen !== root.screen ||
+            targetWindow.width !== root.barW || targetWindow.height !== root.barH)) continue
+        if (root.bar.targetBelongsToWindow && !root.bar.targetBelongsToWindow(target, targetWindow)) continue
+        var pos = targetWindow.itemPosition(target)
         if (p.x >= pos.x && p.x <= pos.x + target.width && p.y >= pos.y && p.y <= pos.y + target.height) return target
       }
       return null

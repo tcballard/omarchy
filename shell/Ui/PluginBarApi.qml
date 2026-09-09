@@ -39,6 +39,15 @@ QtObject {
   property var _targetBelongsToWindow: null
   property var _moduleWidgets: null
   property var _run: null
+  // Host-owned drawers expose no widget or service objects to their controller.
+  readonly property int drawerApiVersion: 1
+  readonly property bool drawerSupported: true
+  property var drawerEntries: []
+  property var _setDrawerOpen: null
+  function setDrawerOpen(value) {
+    return _setDrawerOpen ? _setDrawerOpen(!!value) : false
+  }
+
   property var _setCenterHoverRevealSuppressed: null
 
   function setCenterHoverRevealSuppressed(value) {

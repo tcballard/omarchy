@@ -111,6 +111,102 @@ Item {
   property var moduleSlots: []
   property var pluginBarApis: ({})
   property var pluginObjectOwners: []
+  property int drawerRevision: 0
+  property var drawerHosts: []
+
+  function drawerControllerFor(widgetId) {
+    drawerRevision
+    var controllers = []
+    var sections = ["left", "center", "right"]
+    for (var s = 0; s < sections.length; s++) {
+      var entries = layoutConfig[sections[s]] || []
+      for (var i = 0; i < entries.length; i++) {
+        var settings = entrySettings(entries[i])
+        if (settings.drawerController === true) controllers.push({ id: entryId(entries[i]), settings: settings })
+      }
+    }
+    // Controllers must always remain reachable. First configured owner wins.
+    for (var c = 0; c < controllers.length; c++)
+      if (controllers[c].id === widgetId) return ""
+    for (var j = 0; j < controllers.length; j++) {
+      var hidden = controllers[j].settings.hiddenWidgets
+      if (Array.isArray(hidden) && hidden.indexOf(widgetId) !== -1) return controllers[j].id
+    }
+    return ""
+  }
+
+  function publicDrawerEntries(pluginId) {
+    drawerRevision
+    var catalog = root.barWidgetRegistry.widgets
+    var sections = ["left", "center", "right"]
+    var allowed = false
+    var out = []
+    for (var s = 0; s < sections.length; s++) {
+      var entries = layoutConfig[sections[s]] || []
+      for (var i = 0; i < entries.length; i++) {
+        var id = entryId(entries[i])
+        if (id === pluginId && entrySettings(entries[i]).drawerController === true) allowed = true
+        var metadata = catalog[canonicalWidgetId(id)] ? catalog[canonicalWidgetId(id)].metadata : null
+        out.push({ id: id, name: metadata ? String(metadata.displayName || id) : id })
+      }
+    }
+    return allowed ? out : []
+  }
+
+  function drawerHostFor(widgetId, window) {
+    var owner = drawerControllerFor(widgetId)
+    for (var i = 0; i < drawerHosts.length; i++) {
+      var host = drawerHosts[i]
+      if (host.controllerSlot.moduleName === owner && sameWindow(host.controllerSlot.originalWindow, window)) return host
+    }
+    return null
+  }
+
+  function setPluginDrawerOpen(pluginId, value) {
+    var focused = focusedScreenName()
+    var fallback = null
+    for (var i = 0; i < moduleSlots.length; i++) {
+      var slot = moduleSlots[i]
+      if (slot.pluginApiId !== pluginId || !slot.drawerController || !slot.drawerPanel) continue
+      if (!value) { slot.drawerPanel.open = false; fallback = slot; continue }
+      if (!fallback) fallback = slot
+      if (slotScreenName(slot) === focused) { fallback = slot; break }
+    }
+    if (!fallback) return false
+    fallback.drawerPanel.open = value
+    return true
+  }
+
+  function registerDrawerHost(host) {
+    drawerHosts = drawerHosts.concat([host])
+  }
+
+  function unregisterDrawerHost(host) {
+    // Return items before destroying their temporary visual parent.
+    for (var i = 0; i < moduleSlots.length; i++) {
+      var slot = moduleSlots[i]
+      if (slot.parent === host.widgetContainer && slot.originalParent) {
+        slot.parent = slot.originalParent
+        slot.restoreDrawerOrder()
+      }
+    }
+    drawerHosts = drawerHosts.filter(function(item) { return item !== host })
+  }
+
+  function scenePointInWindow(point, sourceWindow, targetWindow) {
+    var screenPoint = windowScreenPoint(point, sourceWindow)
+    var origin = windowScreenPoint({ x: 0, y: 0 }, targetWindow)
+    return { x: screenPoint.x - origin.x, y: screenPoint.y - origin.y }
+  }
+
+  function slotContainsScenePoint(slot, point, sourceWindow) {
+    if (!slot || !slot.originalWindow || !sourceWindow ||
+        slot.originalWindow.screen !== sourceWindow.screen) return false
+    var local = scenePointInWindow(point, sourceWindow, slot.originalWindow)
+    var rect = slot.mapToItem(null, 0, 0)
+    return local.x >= rect.x && local.x <= rect.x + slot.width &&
+      local.y >= rect.y && local.y <= rect.y + slot.height
+  }
 
   Component {
     id: pluginBarApiComponent
@@ -123,6 +219,7 @@ Item {
 
   function bindPluginBarApi(api) {
     if (!api) return
+    api.drawerEntries = Qt.binding(function() { return root.publicDrawerEntries(api.pluginId) })
     api.foreground = Qt.binding(function() { return root.foreground })
     api.barForeground = Qt.binding(function() { return root.barForeground })
     api.background = Qt.binding(function() { return root.background })
@@ -264,6 +361,7 @@ Item {
           ? root.moduleWidgets(moduleName) : []
       },
       _run: function(command) { root.run(command) },
+      _setDrawerOpen: function(value) { return root.setPluginDrawerOpen(key, value) },
       _setCenterHoverRevealSuppressed: function(value) {
         root.centerHoverRevealSuppressed = !!value
       }
@@ -447,7 +545,7 @@ Item {
 
     try {
       var slotPoint = slot.mapToItem(null, 0, 0)
-      var screenPoint = barDragScreenPoint(slotPoint)
+      var screenPoint = windowScreenPoint(slotPoint, root.slotWindow(slot))
       var thickness = Style.spacing.xs
       if (vertical) {
         return {
@@ -593,10 +691,12 @@ Item {
     var delta = BarModel.inlineSettingsDelta(layoutConfig, next)
     if (delta) {
       applySettingsDelta(delta)
+      drawerRevision++
       return
     }
     layoutConfig = next
     barConfigSerial++
+    drawerRevision++
   }
 
   function applySettingsDelta(delta) {
@@ -606,7 +706,8 @@ Item {
       var settings = entrySettings(change.entry)
       for (var s = 0; s < moduleSlots.length; s++) {
         var slot = moduleSlots[s]
-        if (!slot || slot.region !== change.region || slot.moduleName !== entryId(change.entry)) continue
+        if (!slot || slot.layoutRegion !== change.region || slot.moduleName !== entryId(change.entry)) continue
+        slot.entry = change.entry
         var item = slot.activeItem
         if (item && "settings" in item) item.settings = settings
       }
@@ -912,39 +1013,29 @@ Item {
 
   function moduleDropAtScene(scenePoint, sourceSlot) {
     var sourceWindow = root.slotWindow(sourceSlot) || root.barDragWindow
-    if (sourceWindow && sourceWindow.contentItem) {
-      var barPoint = sourceWindow.contentItem.mapFromItem(null, scenePoint.x, scenePoint.y)
-      if (barPoint.x < 0 || barPoint.x > sourceWindow.contentItem.width ||
-          barPoint.y < 0 || barPoint.y > sourceWindow.contentItem.height)
-        return null
-    }
-
+    var targetWindow = sourceSlot.originalWindow || sourceWindow
+    if (!targetWindow || !targetWindow.contentItem) return null
+    var point = scenePointInWindow(scenePoint, sourceWindow, targetWindow)
+    if (point.x < 0 || point.x > targetWindow.width || point.y < 0 || point.y > targetWindow.height) return null
     var candidates = []
     for (var i = 0; i < moduleSlots.length; i++) {
       var slot = moduleSlots[i]
-      if (!slot || slot === sourceSlot || !slot.visible || slot.width <= 0 || slot.height <= 0) continue
-      if (sourceWindow && !root.sameWindow(root.slotWindow(slot), sourceWindow)) continue
-
-      var slotPoint = { x: slot.x, y: slot.y }
-      try {
-        slotPoint = slot.mapToItem(null, 0, 0)
-      } catch (e) {
-      }
-
-      candidates.push({
-        slot: slot,
-        x: slotPoint.x,
-        y: slotPoint.y,
-        width: slot.width,
-        height: slot.height
-      })
+      if (!slot || slot === sourceSlot || slot.region === "drawer" || !slot.visible || slot.width <= 0 || slot.height <= 0) continue
+      if (!root.sameWindow(root.slotWindow(slot), targetWindow)) continue
+      var slotPoint = slot.mapToItem(null, 0, 0)
+      // Drawer reception is a hit target, not an insertion edge. A large
+      // controller can tie its preceding neighbor in nearest-edge ordering.
+      if (!sourceSlot.drawerController && slot.drawerController &&
+          point.x >= slotPoint.x && point.x <= slotPoint.x + slot.width &&
+          point.y >= slotPoint.y && point.y <= slotPoint.y + slot.height)
+        return { slot: slot, after: false }
+      candidates.push({ slot: slot, x: slotPoint.x, y: slotPoint.y, width: slot.width, height: slot.height })
     }
-
-    return BarModel.nearestDropTarget(candidates, scenePoint, root.vertical)
+    return BarModel.nearestDropTarget(candidates, point, root.vertical)
   }
 
   function visibleModuleSlot(region, name, sourceSlot) {
-    var sourceWindow = root.slotWindow(sourceSlot) || root.barDragWindow
+    var sourceWindow = sourceSlot.originalWindow || root.slotWindow(sourceSlot) || root.barDragWindow
     for (var i = 0; i < moduleSlots.length; i++) {
       var slot = moduleSlots[i]
       if (!slot || slot === sourceSlot || slot.region !== region || slot.moduleName !== name ||
@@ -972,8 +1063,23 @@ Item {
     return ""
   }
 
-  function dropBarModuleAtTarget(sourceSlot, targetSlot, afterTarget) {
+  function dropBarModuleAtTarget(sourceSlot, targetSlot, afterTarget, point, sourceWindow) {
     if (!sourceSlot || !targetSlot) return false
+    if (sourceSlot.region === "drawer") {
+      var host = sourceSlot.drawerHost
+      var controller = host ? host.controllerSlot.activeItem : null
+      if (!controller || typeof controller.restoreBarWidget !== "function") return false
+      controller.restoreBarWidget(sourceSlot.moduleName)
+      return true
+    }
+    if (targetSlot.drawerController && !sourceSlot.drawerController &&
+        slotContainsScenePoint(targetSlot, point, sourceWindow)) {
+      var receiver = targetSlot.activeItem
+      if (receiver && typeof receiver.acceptBarDrop === "function") {
+        receiver.acceptBarDrop(sourceSlot.moduleName)
+        return true
+      }
+    }
 
     var beforeName = afterTarget ? nextVisibleModuleName(targetSlot.region, targetSlot.moduleName, sourceSlot) : targetSlot.moduleName
     return dropBarModule(sourceSlot, targetSlot.region, beforeName)
@@ -992,7 +1098,7 @@ Item {
   function moduleClickTargetAt(slot, localX, localY) {
     for (var i = clickTargets.length - 1; i >= 0; i--) {
       var target = clickTargets[i]
-      if (!moduleTargetClickable(target)) continue
+      if (!moduleTargetClickable(target) || root.targetWindow(target) !== root.slotWindow(slot)) continue
 
       var targetPoint = { x: localX, y: localY }
       try {
@@ -1283,69 +1389,7 @@ Item {
       }
     }
 
-    PopupWindow {
-      id: tooltipWindow
-
-      visible: root.tooltipShown && root.tooltipTarget !== null && root.tooltipText !== "" && root.targetBelongsToWindow(root.tooltipTarget, barWindow)
-      color: "transparent"
-      implicitWidth: Math.ceil(tooltipBubble.implicitWidth)
-      implicitHeight: Math.ceil(tooltipBubble.implicitHeight)
-
-      anchor {
-        id: tooltipAnchor
-        window: barWindow
-        adjustment: PopupAdjustment.Slide
-        edges: Edges.Top | Edges.Left
-        gravity: Edges.Bottom | Edges.Right
-        rect.width: 1
-        rect.height: 1
-
-        onAnchoring: {
-          var target = root.tooltipTarget
-          if (!root.targetBelongsToWindow(target, barWindow)) return
-
-          var popupWidth = tooltipWindow.implicitWidth
-          var popupHeight = tooltipWindow.implicitHeight
-          var localX = target.width / 2 - popupWidth / 2
-          var localY = target.height + 6
-
-          if (root.position === "bottom") {
-            localY = -popupHeight - 6
-          } else if (root.position === "left") {
-            localX = target.width + 6
-            localY = target.height / 2 - popupHeight / 2
-          } else if (root.position === "right") {
-            localX = -popupWidth - 6
-            localY = target.height / 2 - popupHeight / 2
-          }
-
-          var point = barWindow.contentItem.mapFromItem(target, localX, localY)
-          tooltipAnchor.rect.x = Math.round(point.x)
-          tooltipAnchor.rect.y = Math.round(point.y)
-        }
-      }
-
-      BorderSurface {
-        id: tooltipBubble
-        implicitWidth: tooltipLabel.implicitWidth + 20
-        implicitHeight: tooltipLabel.implicitHeight + 14
-        color: Color.tooltip.background
-        borderSpec: Border.surfaceSpec("tooltip", "border", Color.tooltip.border, 1)
-        radius: Style.cornerRadius
-
-        Text {
-          id: tooltipLabel
-          textFormat: Text.PlainText
-          anchors.centerIn: parent
-          text: root.tooltipText
-          color: Color.tooltip.text
-          font.family: root.fontFamily
-          font.pixelSize: Style.font.body
-          horizontalAlignment: Text.AlignHCenter
-          verticalAlignment: Text.AlignVCenter
-        }
-      }
-    }
+    BarTooltip { tooltipHostWindow: barWindow }
 
     Component {
       id: horizontalBar
@@ -1570,12 +1614,17 @@ Item {
           anchors.verticalCenter: centerAnchorModule.verticalCenter
         }
 
-        ModuleSlot {
+        Item {
           id: centerAnchorModule
           visible: centerRoot.hasAnchor
-          entry: centerRoot.anchorEntry
-          region: "center"
+          width: centerAnchorItem.drawerHost ? 0 : centerAnchorItem.width
+          height: centerAnchorItem.drawerHost ? 0 : centerAnchorItem.height
           anchors.centerIn: parent
+          ModuleSlot {
+            id: centerAnchorItem
+            entry: centerRoot.anchorEntry
+            layoutRegion: "center"
+          }
         }
 
         ModuleList {
@@ -1615,12 +1664,17 @@ Item {
           anchors.horizontalCenter: centerAnchorModule.horizontalCenter
         }
 
-        ModuleSlot {
+        Item {
           id: centerAnchorModule
           visible: centerRoot.hasAnchor
-          entry: centerRoot.anchorEntry
-          region: "center"
+          width: centerAnchorItem.drawerHost ? 0 : centerAnchorItem.width
+          height: centerAnchorItem.drawerHost ? 0 : centerAnchorItem.height
           anchors.centerIn: parent
+          ModuleSlot {
+            id: centerAnchorItem
+            entry: centerRoot.anchorEntry
+            layoutRegion: "center"
+          }
         }
 
         ModuleList {
@@ -1745,7 +1799,7 @@ Item {
           ModuleSlot {
             required property var modelData
             entry: modelData
-            region: moduleListRoot.region
+            layoutRegion: moduleListRoot.region
           }
         }
       }
@@ -1763,7 +1817,127 @@ Item {
           ModuleSlot {
             required property var modelData
             entry: modelData
-            region: moduleListRoot.region
+            layoutRegion: moduleListRoot.region
+          }
+        }
+      }
+    }
+  }
+
+  component BarTooltip: PopupWindow {
+    id: tooltipWindow
+    required property var tooltipHostWindow
+    property bool hostOpen: true
+
+    visible: hostOpen && root.tooltipShown && root.tooltipTarget !== null && root.tooltipText !== "" && root.targetBelongsToWindow(root.tooltipTarget, tooltipHostWindow)
+    color: "transparent"
+    implicitWidth: Math.ceil(tooltipBubble.implicitWidth)
+    implicitHeight: Math.ceil(tooltipBubble.implicitHeight)
+
+    anchor {
+      id: tooltipAnchor
+      window: tooltipHostWindow
+      adjustment: PopupAdjustment.Slide
+      edges: Edges.Top | Edges.Left
+      gravity: Edges.Bottom | Edges.Right
+      rect.width: 1
+      rect.height: 1
+
+      onAnchoring: {
+        var target = root.tooltipTarget
+        if (!root.targetBelongsToWindow(target, tooltipHostWindow)) return
+
+        var popupWidth = tooltipWindow.implicitWidth
+        var popupHeight = tooltipWindow.implicitHeight
+        var localX = target.width / 2 - popupWidth / 2
+        var localY = target.height + 6
+
+        if (root.position === "bottom") {
+          localY = -popupHeight - 6
+        } else if (root.position === "left") {
+          localX = target.width + 6
+          localY = target.height / 2 - popupHeight / 2
+        } else if (root.position === "right") {
+          localX = -popupWidth - 6
+          localY = target.height / 2 - popupHeight / 2
+        }
+
+        var point = target.mapToItem(null, localX, localY)
+        tooltipAnchor.rect.x = Math.round(point.x)
+        tooltipAnchor.rect.y = Math.round(point.y)
+      }
+    }
+
+    BorderSurface {
+      id: tooltipBubble
+      implicitWidth: tooltipLabel.implicitWidth + 20
+      implicitHeight: tooltipLabel.implicitHeight + 14
+      color: Color.tooltip.background
+      borderSpec: Border.surfaceSpec("tooltip", "border", Color.tooltip.border, 1)
+      radius: Style.cornerRadius
+
+      Text {
+        id: tooltipLabel
+        textFormat: Text.PlainText
+        anchors.centerIn: parent
+        text: root.tooltipText
+        color: Color.tooltip.text
+        font.family: root.fontFamily
+        font.pixelSize: Style.font.body
+        horizontalAlignment: Text.AlignHCenter
+        verticalAlignment: Text.AlignVCenter
+      }
+    }
+  }
+
+  component DrawerPanel: KeyboardPanel {
+    id: drawer
+    required property var controllerSlot
+    readonly property bool pluginDrawerSurface: true
+    readonly property real drawerBarWidth: controllerSlot.originalWindow ? controllerSlot.originalWindow.width : 0
+    readonly property real drawerBarHeight: controllerSlot.originalWindow ? controllerSlot.originalWindow.height : 0
+    property alias widgetContainer: drawerWidgets
+    anchorItem: controllerSlot.activeItem || controllerSlot
+    owner: controllerSlot.activeItem
+    bar: root
+    retainWindow: true
+    contentWidth: fittedContentWidth(Style.space(500))
+    contentHeight: fittedContentHeight(drawerColumn.implicitHeight, Style.space(740))
+    focusTarget: drawerKeys
+    onOpenChanged: if (controllerSlot.activeItem && "opened" in controllerSlot.activeItem) controllerSlot.activeItem.opened = open
+    Component.onCompleted: root.registerDrawerHost(drawer)
+    Component.onDestruction: root.unregisterDrawerHost(drawer)
+
+    Item {
+      id: drawerKeys
+      BarTooltip { tooltipHostWindow: drawer; hostOpen: drawer.open }
+      anchors.fill: parent
+      focus: true
+      Keys.onEscapePressed: drawer.close()
+      Flickable {
+        anchors.fill: parent
+        contentHeight: drawerColumn.implicitHeight
+        boundsBehavior: Flickable.StopAtBounds
+        clip: true
+        Column {
+          id: drawerColumn
+          width: parent.width
+          spacing: Style.space(16)
+          Loader {
+            width: parent.width
+            sourceComponent: drawer.controllerSlot.activeItem && "drawerContent" in drawer.controllerSlot.activeItem
+              ? drawer.controllerSlot.activeItem.drawerContent : null
+          }
+          Text {
+            text: "TUCKED AWAY"
+            color: Color.muted
+            font.family: Style.font.family
+            font.pixelSize: Style.font.body
+          }
+          Flow {
+            id: drawerWidgets
+            width: parent.width
+            spacing: Style.space(10)
           }
         }
       }
@@ -1774,7 +1948,13 @@ Item {
     id: slot
 
     required property var entry
-    property string region: ""
+    property string layoutRegion: ""
+    readonly property string region: drawerHost ? "drawer" : layoutRegion
+    property Item originalParent: null
+    property var originalWindow: null
+    readonly property bool drawerController: moduleSettings.drawerController === true
+    readonly property var drawerHost: originalWindow && originalParent && originalParent.visible ? root.drawerHostFor(moduleName, originalWindow) : null
+    readonly property var drawerPanel: drawerLoader.item
     readonly property string moduleName: root.entryId(entry)
     readonly property var moduleSettings: root.entrySettings(entry)
     readonly property string customType: root.customModuleType(entry)
@@ -1817,7 +1997,56 @@ Item {
     height: implicitHeight
     z: modulePointer.dragging ? 100 : 0
 
-    Component.onCompleted: root.registerModuleSlot(slot)
+    function syncDrawerParent() {
+      if (!originalParent) return
+      var destination = drawerHost ? drawerHost.widgetContainer : originalParent
+      if (parent === destination) return
+      parent = destination
+      if (!drawerHost) restoreDrawerOrder()
+    }
+    function restoreDrawerOrder() {
+      if (originalParent) {
+        // Reparenting appends a child. Reappend canonical following siblings
+        // without replacing their instances (Item.stackBefore is not QML API).
+        var entries = root.layoutEntries(layoutRegion)
+        var index = root.entryIndex(entries, moduleName)
+        for (var i = index + 1; i < entries.length; i++) {
+          var nextId = root.entryId(entries[i])
+          var siblings = originalParent.children
+          for (var j = 0; j < siblings.length; j++) {
+            var next = siblings[j]
+            if (next !== slot && "moduleName" in next && next.moduleName === nextId) {
+              next.parent = null
+              next.parent = originalParent
+              break
+            }
+          }
+        }
+      }
+    }
+    // Slot-owned scheduling is canceled when a layout rebuild destroys us.
+    // Qt.callLater callbacks outlive their QML owner during startup churn.
+    Timer {
+      id: drawerParentSync
+      interval: 0
+      onTriggered: {
+        if (!slot.originalWindow) slot.originalWindow = root.slotWindow(slot)
+        slot.syncDrawerParent()
+      }
+    }
+    onDrawerHostChanged: drawerParentSync.restart()
+    Component.onCompleted: {
+      originalParent = parent
+      originalWindow = root.slotWindow(slot)
+      root.registerModuleSlot(slot)
+      drawerParentSync.restart()
+    }
+
+    Loader {
+      id: drawerLoader
+      active: slot.drawerController && slot.originalParent && slot.originalParent.visible
+      sourceComponent: Component { DrawerPanel { controllerSlot: slot } }
+    }
     Component.onDestruction: {
       if (root.barDragSource === slot) root.clearBarDrag()
       root.unregisterModuleSlot(slot)
@@ -1962,6 +2191,8 @@ Item {
         var wasDragging = dragging
         var targetSlot = root.barDragTarget
         var afterTarget = root.barDragAfter
+        var releasePoint = slot.mapToItem(null, mouse.x, mouse.y)
+        var sourceWindow = root.barDragWindow
 
         if (wasDragging) suppressClick = true
 
@@ -1969,7 +2200,7 @@ Item {
         root.clearBarDrag()
 
         if (wasDragging && targetSlot) {
-          root.dropBarModuleAtTarget(slot, targetSlot, afterTarget)
+          root.dropBarModuleAtTarget(slot, targetSlot, afterTarget, releasePoint, sourceWindow)
           mouse.accepted = true
         } else if (!wasDragging) {
           mouse.accepted = false
