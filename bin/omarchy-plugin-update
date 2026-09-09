@@ -39,6 +39,18 @@ valid_plugin_id() {
 update_one() {
   local id="$1"
   local dir="$PLUGINS_DIR/$id"
+  [[ ! -L $dir ]] || { echo "Skipped $id: linked source is externally managed."; return 0; }
+  local state="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/plugin-workbench"
+  if [[ -e $state/marketplace/receipts/$id.json || -L $state/marketplace/receipts/$id.json || -e $state/deployments/$id.json ]]; then
+    echo "Skipped $id: update through Plugin Workbench."
+    return 0
+  fi
+  local current reviewed stage
+  current=$(git -C "$dir" rev-parse HEAD)
+  [[ -z $(git -C "$dir" status --porcelain --untracked-files=normal) ]] || {
+    echo "omarchy-plugin-update: '$id' has local changes" >&2
+    return 1
+  }
 
   if ! git -C "$dir" fetch --quiet origin HEAD; then
     echo "omarchy-plugin-update: fetch failed for '$id'" >&2
@@ -64,13 +76,30 @@ update_one() {
     }
   fi
 
-  if ! git -C "$dir" merge --ff-only FETCH_HEAD >/dev/null 2>&1; then
+  reviewed=$(git -C "$dir" rev-parse FETCH_HEAD)
+  stage=$(mktemp -d "${TMPDIR:-/tmp}/omarchy-plugin-update.XXXXXXXX")
+  if ! git clone --quiet --no-hardlinks --no-checkout -- "$dir" "$stage" ||
+    ! git -C "$stage" checkout --quiet --detach "$reviewed" ||
+    ! omarchy-plugin-validate "$stage"; then
+    rm -rf -- "$stage"
+    echo "omarchy-plugin-update: '$id' failed staged validation; installed files unchanged" >&2
+    return 1
+  fi
+  rm -rf -- "$stage"
+  if [[ -L $dir || $(git -C "$dir" rev-parse HEAD) != "$current" || -n $(git -C "$dir" status --porcelain --untracked-files=normal) ]]; then
+    echo "omarchy-plugin-update: '$id' changed during validation" >&2
+    return 1
+  fi
+  if ! git -C "$dir" merge --ff-only "$reviewed" >/dev/null 2>&1; then
     echo "omarchy-plugin-update: cannot fast-forward '$id'; you have local changes in $dir" >&2
     return 1
   fi
 
   if ! omarchy-plugin-validate "$dir"; then
-    git -C "$dir" reset --hard ORIG_HEAD >/dev/null
+    if ! git -C "$dir" reset --hard "$current" >/dev/null; then
+      echo "omarchy-plugin-update: validation and rollback failed for '$id'; inspect $dir" >&2
+      return 1
+    fi
     echo "omarchy-plugin-update: update of '$id' failed validation; rolled back" >&2
     return 1
   fi

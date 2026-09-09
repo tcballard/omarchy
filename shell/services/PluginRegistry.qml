@@ -661,17 +661,7 @@ QtObject {
   }
 
   property Process localPluginWatcher: Process {
-    command: [
-      "inotifywait",
-      "-m",
-      "-r",
-      "-q",
-      "-e",
-      "close_write,create,delete,move",
-      "--format",
-      "%w%f",
-      registry.pluginsDir
-    ]
+    command: ["omarchy-plugin-watch", registry.pluginsDir]
     stdout: SplitParser {
       onRead: function(path) {
         var pluginId = registry.localPluginIdForPath(path)

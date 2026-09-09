@@ -1,0 +1,49 @@
+#!/bin/bash
+
+# omarchy:summary=Watch plugin files and linked development sources
+# omarchy:group=plugin
+# omarchy:args=<plugin-directory>
+
+set -euo pipefail
+root=$(realpath -e -- "$1")
+watch_pid=""
+cleanup() { [[ -z $watch_pid ]] || kill "$watch_pid" 2>/dev/null || true; }
+trap cleanup EXIT
+trap 'exit 0' TERM INT
+while true; do
+  declare -A links=()
+  watch_paths=("$root")
+  for path in "$root"/*; do
+    [[ -L $path && -d $path ]] || continue
+    source=$(realpath -e -- "$path")
+    # A source must be a plugin directory, not an arbitrary ancestor tree.
+    [[ -f $source/manifest.json && $root != "$source" && $root != "$source/"* ]] || continue
+    links["${path##*/}"]=$source
+    watch_paths+=("$source")
+  done
+  coproc WATCH {
+    exec inotifywait -m -r -q -e close_write,create,delete,move,delete_self,move_self \
+      --exclude '(^|/)(\.git|target)(/|$)' --format '%w%f' -- "${watch_paths[@]}"
+  }
+  watch_pid=$WATCH_PID
+  watch_fd=${WATCH[0]}
+  rebuild=0
+  while IFS= read -r changed <&"$watch_fd"; do
+    if [[ $changed == "$root/"* ]]; then
+      printf '%s\n' "$changed"
+      relative=${changed#"$root/"}
+      # Root entry creation/removal/replacement changes the watch set.
+      if [[ $relative != */* ]]; then rebuild=1; break; fi
+    fi
+    for id in "${!links[@]}"; do
+      source=${links[$id]}
+      if [[ $changed == "$source" || $changed == "$source/"* ]]; then
+        printf '%s/%s/%s\n' "$root" "$id" "${changed#"$source"/}"
+      fi
+    done
+  done
+  cleanup
+  wait "$watch_pid" 2>/dev/null || true
+  watch_pid=""
+  (( rebuild )) || exit 1
+done
