@@ -26,11 +26,18 @@ omarchy-update-requires-free-space
 # and move on instead of waiting on a prompt nobody is here to give.
 [[ ${1:-} != "-y" ]] || export OMARCHY_UPDATE_UNATTENDED=1
 
+update_stage() {
+  [[ -t 1 && ${TERM:-dumb} != "dumb" ]] || return 0
+  omarchy-update-snake "$1" "$2"
+}
+
 if [[ ${1:-} == "-y" ]] || omarchy-update-confirm; then
+  update_stage 0 "Preparing update"
   # Before the snapshot: the cache is on the snapshotted subvolume, so pruning
   # after it frees nothing until that snapshot ages out.
   omarchy-update-pkg-prune
 
+  update_stage 1 "Creating recovery snapshot"
   # 127 means Snapper is deliberately absent. Any other failure already said
   # what went wrong, and a missing snapshot is not worth blocking an update
   # over, but it must not pass for one either.
@@ -39,19 +46,28 @@ if [[ ${1:-} == "-y" ]] || omarchy-update-confirm; then
 
   omarchy-update-stay-awake start
 
+  update_stage 2 "Checking Omarchy source"
   omarchy-update-dev
+  update_stage 3 "Refreshing keyrings"
   omarchy-update-keyring
 
   # Migrations ship with the packages installed here and are written against
   # them, so everything below waits on this finishing. An upgrade that stopped
   # takes the update with it rather than migrating against what is still on disk.
+  update_stage 4 "Updating system packages"
   omarchy-update-system-pkgs
+  update_stage 5 "Applying migrations"
   omarchy-migrate
+  update_stage 6 "Running post-update hooks"
   omarchy-hook post-update
+  update_stage 7 "Updating AUR packages"
   omarchy-update-aur-pkgs
+  update_stage 8 "Updating development tools"
   omarchy-update-mise
+  update_stage 9 "Checking unused packages"
   omarchy-update-orphan-pkgs
 
+  update_stage 10 "Checking the update"
   omarchy-update-analyze-logs
   omarchy-update-status
 
