@@ -120,6 +120,11 @@ base-size = 12
 # icon-large    = 18
 
 [popups]
+# A joined header fills behind a panel's explicit headerItem, up to its frame.
+# The default preserves the inset header. Older shells ignore these keys.
+header-style = "inset"
+# header-background = "{{ dark_background }}"
+# header-background-alpha = 1.0
 # Shared by every bar flyout (dropdowns, OSD, popup cards).
 # Border accepts either a solid color or a Hyprland-style gradient. Border
 # widths accept one CSS-style scalar/list: N, "Y X", "T X B", or "T R B L";

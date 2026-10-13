@@ -8,6 +8,8 @@ Rectangle {
   id: root
 
   property var borderSpec: Border.none()
+  // Composite surfaces may paint this same spec over a background child.
+  property bool paintBorder: true
   property real padding: 0
   property real topPadding: padding
   property real rightPadding: padding
@@ -24,12 +26,12 @@ Rectangle {
   readonly property real contentLeftInset: borderLeft + leftPadding
   readonly property bool usesOverlayBorder: Border.needsOverlay(borderSpec)
 
-  border.color: Border.canUseNative(borderSpec) ? Border.color(borderSpec) : "transparent"
-  border.width: Border.canUseNative(borderSpec) ? Border.uniformWidth(borderSpec) : 0
+  border.color: paintBorder && Border.canUseNative(borderSpec) ? Border.color(borderSpec) : "transparent"
+  border.width: paintBorder && Border.canUseNative(borderSpec) ? Border.uniformWidth(borderSpec) : 0
 
   Loader {
     anchors.fill: parent
-    active: root.usesOverlayBorder
+    active: root.paintBorder && root.usesOverlayBorder
 
     sourceComponent: BorderOverlay {
       anchors.fill: parent

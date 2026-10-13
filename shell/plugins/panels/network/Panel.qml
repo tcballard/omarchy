@@ -1114,6 +1114,7 @@ Panel {
     // first; only events the focused subtree ignores bubble back here.
     content: PanelKeyCatcher {
       id: keyCatcher
+      property alias headerItem: heroItem
       property alias heroMeta: heroMeta
       implicitHeight: column.implicitHeight
       anchors.fill: parent
@@ -1224,6 +1225,7 @@ Panel {
 
       // ---------- Hero: network icon · SSID + state · actions ----------
       Item {
+        id: heroItem
         width: parent.width
         implicitHeight: Math.max(heroIcon.implicitHeight, heroLabels.implicitHeight, heroActions.implicitHeight)
 
