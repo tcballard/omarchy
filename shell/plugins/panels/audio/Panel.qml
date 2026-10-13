@@ -766,6 +766,7 @@ Panel {
 
     content: PanelKeyCatcher {
       id: keyCatcher
+      property alias headerItem: heroItem
       property alias scrollArea: scrollArea
       implicitHeight: panelColumn.implicitHeight
       anchors.fill: parent

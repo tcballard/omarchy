@@ -423,6 +423,7 @@ Panel {
 
     content: PanelKeyCatcher {
       id: keyCatcher
+      property alias headerItem: header
       property alias panelFlick: panelFlick
       property alias hero: hero
       property alias exitNodeColumn: exitNodeColumn

@@ -84,6 +84,9 @@ QtObject {
   readonly property QtObject popups: QtObject {
     property color background: root.composed("popups.background", "popups.background-alpha", root.background, 1.0)
     property color text: root.pick("popups.text", root.foreground)
+    // Opt-in; unknown/missing styles retain the ordinary inset header.
+    property bool joinedHeader: root.pick("popups.header-style", "inset") === "joined"
+    property color headerBackground: root.composed("popups.header-background", "popups.header-background-alpha", background, 1.0)
     property color border: root.composed("popups.border", "popups.border-alpha", root.accent, 1.0)
   }
   readonly property QtObject tooltip: QtObject {

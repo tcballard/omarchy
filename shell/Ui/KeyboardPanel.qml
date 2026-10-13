@@ -41,6 +41,8 @@ PanelWindow {
   required property Item anchorItem
   required property QtObject bar
   property var owner: null
+  // Explicit header ownership: never infer a header from arbitrary children.
+  property Item headerItem: loadedContent && "headerItem" in loadedContent ? loadedContent.headerItem : null
   property int margin: Style.gapsOut
   property int padding: Style.spacing.popupPadding
   property int contentWidth: Style.space(280)
@@ -400,8 +402,9 @@ PanelWindow {
 
   // --- card ----------------------------------------------------------------
 
-  BorderSurface {
+  PanelSurface {
     id: card
+    headerItem: root.headerItem
     x: root.cardOrigin.x
     y: root.cardOrigin.y
     width: root.contentWidth
