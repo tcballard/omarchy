@@ -1,0 +1,29 @@
+name: Agent account rebase validation
+on:
+  push:
+    branches: [ci/agent-login-rebase-validation]
+permissions:
+  contents: read
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: Account and launcher regressions
+        shell: bash
+        run: |
+          failed=0
+          for test in agent-account-install agent-account agent-account-recovery agent-account-copy agent-account-autoswitch agents-panel mise-install; do
+            bash "test/shell.d/$test-test.sh" || failed=1
+          done
+          exit "$failed"
+      - name: Translation structure
+        if: always()
+        run: I18N_STRUCTURAL=1 bash test/shell.d/i18n-test.sh
+      - name: Embedded English scan
+        if: always()
+        run: python3 scripts/i18n-sync.py extract-scan --check
