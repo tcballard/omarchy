@@ -19,7 +19,10 @@ jobs:
           cache: false
           env: false
       - name: Native mise account dispatch
-        run: bash test/shell.d/agent-account-exec-test.sh
+        run: |
+          # The isolated test deliberately uses only /usr/bin for system tools.
+          sudo install -m 755 "$(command -v mise)" /usr/bin/mise
+          bash test/shell.d/agent-account-exec-test.sh
       - name: Account and launcher regressions
         shell: bash
         run: |
