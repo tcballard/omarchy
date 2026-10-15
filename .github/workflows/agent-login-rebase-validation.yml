@@ -13,6 +13,13 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: 24
+      - uses: jdx/mise-action@v5.1.2
+        with:
+          install: false
+          cache: false
+          env: false
+      - name: Native mise account dispatch
+        run: bash test/shell.d/agent-account-exec-test.sh
       - name: Account and launcher regressions
         shell: bash
         run: |
