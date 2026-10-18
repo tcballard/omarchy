@@ -19,7 +19,7 @@ Column {
       spacing: Style.space(4)
       UI.Button {
         width: parent.width
-        text: (card.modelData.parent ? "↳ " : "") + card.modelData.provider + " · " + card.modelData.status
+        text: (card.modelData.parent ? "↳ " : "") + card.modelData.provider + (card.modelData.reviewer ? " → " + card.modelData.reviewer : "") + " · " + card.modelData.status
         selected: root.selectedId === card.modelData.id
         focusable: true
         onClicked: root.picked(card.modelData.id)

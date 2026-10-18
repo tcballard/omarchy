@@ -159,11 +159,31 @@ fn start(state: &Shared, r: Request) -> Result<Value> {
     if provider == "default" {
         provider = runner::default_provider()?;
     }
-    if !matches!(provider.as_str(), "codex" | "claude") {
+    if !matches!(provider.as_str(), "codex" | "claude" | "grok") {
         return Err(format!(
-            "{provider} has no execution adapter in this prototype; choose Codex or Claude"
+            "{provider} has no execution adapter in this prototype; choose Codex, Claude or a Grok reviewer"
         ));
     }
+    let reviewer = if r.parent.is_none() {
+        if provider == "grok" {
+            return Err("Grok is reviewer-only; select Codex or Claude as lead".into());
+        }
+        let chosen = string(&r.params, "reviewer")
+            .filter(|s| s != "other")
+            .unwrap_or_else(|| {
+                if provider == "codex" {
+                    "claude".into()
+                } else {
+                    "codex".into()
+                }
+            });
+        if !matches!(chosen.as_str(), "codex" | "claude" | "grok") || chosen == provider {
+            return Err("Choose a different supported reviewer: Codex, Claude or Grok".into());
+        }
+        Some(chosen)
+    } else {
+        None
+    };
     let model = string(&r.params, "model");
     if model
         .as_ref()
@@ -186,13 +206,21 @@ fn start(state: &Shared, r: Request) -> Result<Value> {
             .iter()
             .find(|t| &t.id == parent)
             .ok_or("Parent not found")?;
-        if lead.provider == provider {
-            return Err("Choose the other provider for an independent review".into());
+        let expected = lead
+            .reviewer
+            .as_deref()
+            .unwrap_or(if lead.provider == "codex" {
+                "claude"
+            } else {
+                "codex"
+            });
+        if expected != provider {
+            return Err("Delegation must use the reviewer selected for this review".into());
         }
         lead.account_homes.clone()
     } else {
         let mut homes = HashMap::new();
-        for name in ["codex", "claude"] {
+        for name in [provider.as_str(), reviewer.as_deref().unwrap()] {
             runner::executable(name)?;
             homes.insert(name.into(), runner::selected_home(name)?);
         }
@@ -243,7 +271,11 @@ fn start(state: &Shared, r: Request) -> Result<Value> {
             .iter()
             .find(|t| t.parent == r.parent && t.request_key.as_ref() == Some(key))
     {
-        if old.prompt != prompt || old.provider != provider || old.model != model || old.cwd != cwd
+        if old.prompt != prompt
+            || old.provider != provider
+            || old.model != model
+            || old.cwd != cwd
+            || old.reviewer != reviewer
         {
             return Err("Retry key was already used for a different request".into());
         }
@@ -265,6 +297,7 @@ fn start(state: &Shared, r: Request) -> Result<Value> {
         parent: r.parent,
         provider: provider.clone(),
         model,
+        reviewer,
         cwd,
         account_home: account_homes.get(&provider).cloned().flatten(),
         account_homes,

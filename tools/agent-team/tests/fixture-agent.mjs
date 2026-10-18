@@ -1,11 +1,17 @@
 #!/usr/bin/env node
+import {basename} from 'node:path';
 import {spawn} from 'node:child_process';
 import {readFileSync, writeFileSync, appendFileSync} from 'node:fs';
 import {createInterface} from 'node:readline';
 
 const args=process.argv.slice(2);
+const grok=basename(process.argv[1])==='grok';
 if(args.includes('--version')){console.log('Fixture CLI 1.0');process.exit(0)}
-if(args.includes('--help')){console.log('--restricted --output-format --mcp-config');process.exit(0)}
+if(args.includes('--help')){console.log('--restricted --output-format --mcp-config --prompt-file --sandbox --permission-mode --tools --disallowed-tools --deny --max-turns');process.exit(0)}
+if(grok && args[0]==='inspect'){
+  const data=process.env.FIXTURE_GROK_REPORT ? JSON.parse(readFileSync(process.env.FIXTURE_GROK_REPORT,'utf8')) : {grokVersion:'fixture',cwd:process.cwd(),hooks:[],mcpServers:[],plugins:[],lspServers:[],configSources:{layers:[]}};
+  console.log(JSON.stringify(data));process.exit(0);
+}
 let prompt='';for await(const chunk of process.stdin)prompt+=chunk;
 const claude=args.includes('-p');
 let bridge;
@@ -17,11 +23,15 @@ else {
     bridge={command:quoted('command'),args:['mcp'],env:{AGENT_TEAM_TASK:quoted('AGENT_TEAM_TASK'),AGENT_TEAM_CAPABILITY:quoted('AGENT_TEAM_CAPABILITY')}};
   }
 }
-if(process.env.FIXTURE_TRACE)appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify({lead:!!bridge,claude,cwd:process.cwd(),home:(claude?process.env.CLAUDE_CONFIG_DIR:process.env.CODEX_HOME)||null,apiKeyPresent:!!process.env.OPENAI_API_KEY,tools:claude?args[args.indexOf('--tools')+1]:null,sandbox:claude?null:args[args.indexOf('--sandbox')+1]})+'\n');
-const emit=text=>console.log(JSON.stringify(claude?{type:'result',result:text,is_error:false}:{type:'item.completed',item:{type:'agent_message',text}}));
+if(process.env.FIXTURE_TRACE)appendFileSync(process.env.FIXTURE_TRACE,JSON.stringify({lead:!!bridge,claude,cwd:process.cwd(),grok,home:(grok?process.env.GROK_HOME:claude?process.env.CLAUDE_CONFIG_DIR:process.env.CODEX_HOME)||null,apiKeyPresent:!!process.env.OPENAI_API_KEY,xaiKeyPresent:!!process.env.XAI_API_KEY,pin:process.env.OMARCHY_AGENT_GROK_HOME,args,tools:(claude||grok)?args[args.indexOf('--tools')+1]:null,sandbox:claude?null:args[args.indexOf('--sandbox')+1]})+'\n');
+const emit=text=>console.log(JSON.stringify(grok?{type:'result',subtype:'success',is_error:false,result:text,stop_reason:'end_turn'}:claude?{type:'result',result:text,is_error:false}:{type:'item.completed',item:{type:'agent_message',text}}));
+if(grok && prompt.includes('fixture:grok-auth-fail')){console.log(JSON.stringify({type:'result',subtype:'error',is_error:true,result:'Authentication required (Grok fixture)',stop_reason:'error'}));process.exit(1)}
+if(grok && prompt.includes('fixture:grok-overflow')){process.stdout.write('x'.repeat(70_000));await new Promise(()=>{})}
 if(prompt.includes('fixture:overflow')){process.stdout.write('x'.repeat(70_000));await new Promise(()=>{})}
 if(prompt.includes('fixture:fail')){console.log(JSON.stringify({type:'result',result:'Authentication required (fixture)',is_error:true}));process.exit(1)}
 if(prompt.includes('fixture:sleep')){if(process.env.FIXTURE_PID)writeFileSync(process.env.FIXTURE_PID,String(process.pid));setInterval(()=>{},60000);await new Promise(()=>{})}
+if(grok && prompt.includes('fixture:grok-no-terminal')){console.log(JSON.stringify({type:'assistant',message:{content:[{type:'text',text:'intermediate only'}]}}));process.exit(0)}
+if(grok && prompt.includes('fixture:grok-turn-limit')){console.log(JSON.stringify({type:'result',subtype:'error_max_turns',is_error:false,result:'partial',stop_reason:'max_turns'}));process.exit(0)}
 if(prompt.includes('fixture:no-delegate')){emit('Lead skipped the independent review.');process.exit(0)}
 if(bridge){
   const proc=spawn(bridge.command,bridge.args,{env:{...process.env,...bridge.env},stdio:['pipe','pipe','inherit']});
@@ -33,12 +43,13 @@ if(bridge){
     const init=await call('initialize',{protocolVersion:'2024-11-05',capabilities:{},clientInfo:{name:'fixture',version:'1'}});
     if(!init.result.capabilities.tools)throw Error('MCP initialization failed');
     const list=await call('tools/list');if(list.result.tools.length!==4)throw Error('Missing tools');
-    const provider=claude?'codex':'claude';
-    const task=prompt.includes('fixture:slowchild')?'fixture:sleep':'Review the error path (fixture)';
+    const provider=prompt.match(/Reviewer provider: (codex|claude|grok)/)?.[1] || (claude?'codex':'claude');
+    const task=prompt.includes('fixture:slowchild')?'fixture:sleep':prompt.includes('fixture:grok-')?prompt.match(/fixture:grok-[a-z-]+/)[0]:'Review the error path (fixture)';
     const brief={provider,task,clientRequestId:'review-1'};
     if(prompt.includes('fixture:account-change'))writeFileSync(process.env.FIXTURE_CHOICE,process.env.FIXTURE_NEXT_ACCOUNT);
     const same=await call('tools/call',{name:'delegate_task',arguments:{...brief,provider:claude?'claude':'codex'}});
     if(!same.result.isError)throw Error('Same-provider delegation accepted');
+    if(provider==='grok'){const wrong=await call('tools/call',{name:'delegate_task',arguments:{...brief,provider:claude?'codex':'claude'}});if(!wrong.result.isError)throw Error('Reviewer selection escaped')}
     const child=await tool('delegate_task',brief);
     const retry=await tool('delegate_task',brief);if(retry.id!==child.id)throw Error('Duplicate retry created work');
     const changed=await call('tools/call',{name:'delegate_task',arguments:{...brief,task:'different brief'}});

@@ -64,7 +64,7 @@ Column {
   }
 
   TeamLabel { width: parent.width; text: "Cross-provider review"; font.pixelSize: Style.font.title; font.bold: true }
-  TeamLabel { width: parent.width; text: "Choose a lead. The other provider reviews through MCP.\nExperimental · read-only · Codex + Claude"; opacity: 0.7 }
+  TeamLabel { width: parent.width; text: "Choose a lead. Your selected provider reviews through MCP.\nExperimental · read-only · Codex / Claude / Grok"; opacity: 0.7 }
   TeamLabel { width: parent.width; visible: text !== ""; text: setup.running ? "Setting up Tasks…" : root.notice || action.error || status.error; color: Commons.Color.urgent }
   Flow {
     width: parent.width
@@ -80,6 +80,7 @@ Column {
   Flow {
     property string provider: "default"
     id: choices
+    onProviderChanged: reviewers.provider = "other"
     width: parent.width
     spacing: Style.space(8)
     Repeater {
@@ -93,6 +94,25 @@ Column {
       }
     }
   }
+  TeamLabel { width: parent.width; text: "Independent reviewer"; opacity: 0.7 }
+  Flow {
+    id: reviewers
+    property string provider: "other"
+    width: parent.width
+    spacing: Style.space(8)
+    Repeater {
+      model: ["other", "codex", "claude", "grok"]
+      delegate: UI.Button {
+        required property string modelData
+        text: modelData === "other" ? "Other Codex / Claude" : modelData
+        enabled: modelData !== choices.provider
+        selected: reviewers.provider === modelData
+        focusable: true
+        onClicked: reviewers.provider = modelData
+      }
+    }
+  }
+  TeamLabel { width: parent.width; text: "Grok can review; Codex or Claude leads. Kimi execution is not enabled."; opacity: 0.7 }
   TeamLabel { width: parent.width; text: "Both providers must be installed and signed in. Accounts are pinned when you start. No automatic account or provider fallback."; opacity: 0.7 }
   TeamLabel { width: parent.width; text: "Review brief"; opacity: 0.7 }
   Controls.TextArea {
@@ -100,7 +120,7 @@ Column {
     width: parent.width
     height: Style.space(100)
     textFormat: TextEdit.PlainText
-    text: "Review this project's error handling. Ask the other provider for an independent review, collect its result, then report concrete findings with file references."
+    text: "Review this project's error handling. Ask the selected reviewer for an independent review, collect its result, then report concrete findings with file references."
     wrapMode: TextEdit.Wrap
     color: Commons.Color.foreground
     font.family: Style.font.family
@@ -113,7 +133,7 @@ Column {
     text: action.busy ? "Starting…" : "Start review"
     focusable: true
     enabled: !setup.running && !action.busy && project.text.trim() !== "" && brief.text.trim() !== ""
-    onClicked: action.send("start", {provider: choices.provider, cwd: project.text.trim(), task: brief.text})
+    onClicked: action.send("start", {provider: choices.provider, cwd: project.text.trim(), task: brief.text, reviewer: reviewers.provider})
   }
   TeamLabel { width: parent.width; text: "Tasks"; font.bold: true }
   TeamLabel { width: parent.width; visible: root.tasks.length === 0; text: status.error ? "Task history unavailable" : "No tasks yet. Choose a project and start a review."; opacity: 0.7 }

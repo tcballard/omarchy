@@ -89,6 +89,8 @@ pub struct Task {
     pub parent: Option<String>,
     pub provider: String,
     pub model: Option<String>,
+    #[serde(default)]
+    pub reviewer: Option<String>,
     pub cwd: String,
     pub account_home: Option<String>,
     #[serde(default)]
@@ -113,7 +115,7 @@ impl Task {
     }
     pub fn public(&self, detail: bool) -> Value {
         json!({"id":self.id,"parent":self.parent,"provider":self.provider,"model":self.model,
-            "cwd":self.cwd,"account": if self.account_home.is_some(){"Selected named account"}else{"Main / CLI default"},
+            "reviewer":self.reviewer,"cwd":self.cwd,"account": if self.account_home.is_some(){"Selected named account"}else{"Main / CLI default"},
             "prompt":clipped(&self.prompt, if detail {12_000}else{180}),"status":self.status,
             "activity":self.activity,"result":if detail {self.result.clone()}else{clipped(&self.result,240)},
             "error":self.error,"created_at":self.created_at,"completed_at":self.completed_at,"output_truncated":self.output_truncated})

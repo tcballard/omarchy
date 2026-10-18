@@ -1,4 +1,5 @@
 mod broker;
+mod grok;
 mod mcp;
 mod model;
 mod runner;
@@ -99,11 +100,11 @@ fn run() -> Result<()> {
         }
         "start" => {
             if args.len() < 4 {
-                return Err("Usage: omarchy-agent-team start <codex|claude|default> /absolute/project \"review brief\"".into());
+                return Err("Usage: omarchy-agent-team start <codex|claude|default> /absolute/project \"review brief\" [codex|claude|grok]".into());
             }
             let data = rpc(Request {
                 op: "start".into(),
-                params: json!({"provider":args[1],"cwd":args[2],"task":args[3]}),
+                params: json!({"provider":args[1],"cwd":args[2],"task":args[3],"reviewer":args.get(4)}),
                 parent: None,
                 capability: None,
             })?;
