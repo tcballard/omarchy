@@ -12,6 +12,20 @@ Panel {
   ipcTarget: "omarchy.agents"
   manageIpc: false
 
+  property bool tasksView: false
+  property bool tasksLoaded: false
+  readonly property Item tasksViewItem: panel.loadedContent ? panel.loadedContent.tasksViewItem : null
+
+  function showTasks(value) {
+    tasksView = value
+    if (value) tasksLoaded = true
+    if (panelFlick) panelFlick.contentY = 0
+    Qt.callLater(function() {
+      if (value && tasksViewItem) tasksViewItem.focusForm()
+      else focusKeys()
+    })
+  }
+
   // Items inside the panel's lazily built content, null until it first
   // opens. Code inside the content reaches its own ids directly.
   readonly property Item panelFlick: panel.loadedContent ? panel.loadedContent.panelFlick : null
@@ -59,6 +73,8 @@ Panel {
   // Hovering moves the same cursor, so only one thing is lit.
   readonly property var keyRows: {
     var rows = []
+    if (tasksView) return rows
+    if (addStage === "") rows.push([{kind: "subscriptions", index: 0}, {kind: "tasks", index: 0}])
     var hero = []
     if (addButtonShown) hero.push({ kind: "add", index: 0 })
     if (addStage === "") hero.push({ kind: "launch", index: 0 })
@@ -391,6 +407,8 @@ Panel {
   function activateSelection() {
     var target = keyTarget
     if (!target) refreshNow()
+    else if (target.kind === "subscriptions") showTasks(false)
+    else if (target.kind === "tasks") showTasks(true)
     else if (target.kind === "add") addStage !== "" ? cancelAdd() : addAccount()
     else if (target.kind === "choice") chooseAddProvider(addProviders[target.index].providerId)
     else if (target.kind === "launch") launchAgent()
@@ -864,7 +882,10 @@ Panel {
     nowMs = Date.now()
     if (panelFlick) panelFlick.contentY = 0
     usage.refreshLimits()
-    Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
+    Qt.callLater(function() {
+      if (tasksView && tasksViewItem) tasksViewItem.focusForm()
+      else if (panel.loadedContent) panel.loadedContent.forceActiveFocus()
+    })
   }
 
   Main {
@@ -979,6 +1000,9 @@ Panel {
       property alias hero: hero
       property alias column: column
       property alias providerSections: providerSections
+      readonly property Item tasksViewItem: tasksLoader.item
+      blocked: root.tasksView
+      Keys.onEscapePressed: if (root.tasksView) root.close()
       implicitHeight: column.implicitHeight
       anchors.fill: parent
       reorderable: root.addStage === "" && !root.renaming
@@ -1078,14 +1102,49 @@ Panel {
             }
           }
 
+          Row {
+            visible: root.addStage === ""
+            width: parent.width
+            spacing: Style.space(8)
+            Button {
+              text: "Subscriptions"
+              selected: !root.tasksView
+              hasCursor: root.hasKey("subscriptions")
+              focusable: true
+              onHovered: root.pointAt("subscriptions")
+              onClicked: root.showTasks(false)
+            }
+            Button {
+              text: "Tasks"
+              selected: root.tasksView
+              hasCursor: root.hasKey("tasks")
+              focusable: true
+              onHovered: root.pointAt("tasks")
+              onClicked: root.showTasks(true)
+            }
+          }
+
+          Loader {
+            id: tasksLoader
+            width: column.width
+            active: root.tasksLoaded
+            visible: root.tasksView
+            sourceComponent: Component {
+              TasksView {
+                active: root.opened && root.tasksView
+                onCloseRequested: root.close()
+              }
+            }
+          }
+
           AddView {
-            visible: root.addStage !== "" || root.blankSlate
+            visible: !root.tasksView && (root.addStage !== "" || root.blankSlate)
             width: column.width
           }
 
           Repeater {
             id: providerSections
-            model: root.addStage === "" ? root.providers : []
+            model: !root.tasksView && root.addStage === "" ? root.providers : []
 
             ProviderSection {
               required property var modelData
@@ -1098,12 +1157,12 @@ Panel {
 
           // ---------- Make something ----------
           PanelSeparator {
-            visible: root.addStage === "" && !root.blankSlate
+            visible: !root.tasksView && root.addStage === "" && !root.blankSlate
             foreground: root.foreground
           }
 
           Column {
-            visible: root.addStage === "" && !root.blankSlate
+            visible: !root.tasksView && root.addStage === "" && !root.blankSlate
             width: parent.width
             spacing: Style.space(12)
 

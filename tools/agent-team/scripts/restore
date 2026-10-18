@@ -1,0 +1,15 @@
+#!/bin/bash
+set -euo pipefail
+target=${OMARCHY_PATH:?Run this inside your Omarchy desktop session}
+backup="${XDG_STATE_HOME:-$HOME/.local/state}/omarchy/agent-team-overlay"
+[[ -f $backup/Panel.qml && -f $backup/installed.sha256 ]] || { echo 'No managed Agents overlay found.' >&2; exit 1; }
+(cd "$target/shell/plugins/agents" && sha256sum --check --status "$backup/installed.sha256") || { echo 'Agents changed after installation. Restore aborted to preserve your changes.' >&2; exit 1; }
+systemctl --user disable --now omarchy-agent-team.service
+rm -f "${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user/omarchy-agent-team.service"
+systemctl --user daemon-reload
+cp "$backup/Panel.qml" "$target/shell/plugins/agents/Panel.qml"
+rm -f "$target/shell/plugins/agents/"{BrokerClient,TaskCards,TasksView,TeamLabel}.qml
+rm -f "$HOME/.local/bin/omarchy-agent-team"
+rm -rf "$target/tools/agent-team" "$backup"
+omarchy-restart-shell
+printf 'Original Agents panel restored. Accounts, subscription data and review history retained.\n'

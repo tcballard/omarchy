@@ -1,0 +1,42 @@
+#!/bin/bash
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+binary="$HOME/.local/bin/omarchy-agent-team"
+unit_dir="${XDG_CONFIG_HOME:-$HOME/.config}/systemd/user"
+[[ $(uname -s) == Linux && $(uname -m) == x86_64 ]] || { echo 'Tasks currently supports Linux x86_64.' >&2; exit 1; }
+command -v systemctl >/dev/null || { echo 'A systemd user session is required.' >&2; exit 1; }
+systemctl --user show-environment >/dev/null
+cd -- "$root/bin"
+sha256sum --check --status SHA256SUMS || { echo 'Backend checksum failed. Update or reinstall the plugin.' >&2; exit 1; }
+"$root/bin/omarchy-agent-team" help >/dev/null
+systemctl --user stop omarchy-agent-team.service 2>/dev/null || true
+mkdir -p -- "$(dirname -- "$binary")" "$unit_dir"
+install -m755 "$root/bin/omarchy-agent-team" "$binary"
+
+escaped_binary=${binary//\\/\\\\}
+escaped_binary=${escaped_binary//\"/\\\"}
+escaped_binary=${escaped_binary//%/%%}
+service_path=${PATH//\\/\\\\}
+service_path=${service_path//\"/\\\"}
+service_path=${service_path//%/%%}
+cat > "$unit_dir/omarchy-agent-team.service" <<EOF
+[Unit]
+Description=Omarchy Agent Team task broker
+
+[Service]
+Type=simple
+ExecStart="$escaped_binary" daemon
+Environment="PATH=$service_path"
+Restart=on-failure
+RestartSec=2
+KillMode=control-group
+TimeoutStopSec=5
+UMask=0077
+
+[Install]
+WantedBy=default.target
+EOF
+chmod 600 "$unit_dir/omarchy-agent-team.service"
+systemctl --user daemon-reload
+systemctl --user enable --now omarchy-agent-team.service
+printf 'Tasks backend is ready.\n'

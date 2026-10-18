@@ -1,0 +1,8 @@
+#!/bin/bash
+set -euo pipefail
+root=$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")/.." && pwd)
+cargo fmt --manifest-path "$root/Cargo.toml" --check
+cargo clippy --manifest-path "$root/Cargo.toml" --locked -- -D warnings
+cargo build --manifest-path "$root/Cargo.toml" --locked
+node --test "$root/tests/"*.test.mjs
+bash -n "$root/scripts/"*

@@ -1,0 +1,28 @@
+name: Experimental Agent Team
+on:
+  push:
+    branches: [feat/agents-orchestration]
+    paths: ['tools/agent-team/**', 'shell/plugins/agents/**', '.github/workflows/agent-team.yml']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  portable:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: tools/agent-team/tests/run
+      - run: bash test/shell.d/agents-panel-test.sh
+      - run: cargo build --release --locked --manifest-path tools/agent-team/Cargo.toml
+      - uses: actions/upload-artifact@v4
+        with:
+          name: agent-team-linux-x86_64
+          path: tools/agent-team/target/release/omarchy-agent-team
