@@ -5,26 +5,13 @@ import Quickshell.Io
 import qs.Commons
 import qs.Commons as Commons
 import qs.Ui
+import "TeamPrompt.js" as TeamPrompt
 
 Panel {
   id: root
   moduleName: "omarchy.agents"
   ipcTarget: "omarchy.agents"
   manageIpc: false
-
-  property bool tasksView: false
-  property bool tasksLoaded: false
-  readonly property Item tasksViewItem: panel.loadedContent ? panel.loadedContent.tasksViewItem : null
-
-  function showTasks(value) {
-    tasksView = value
-    if (value) tasksLoaded = true
-    if (panelFlick) panelFlick.contentY = 0
-    Qt.callLater(function() {
-      if (value && tasksViewItem) tasksViewItem.focusForm()
-      else focusKeys()
-    })
-  }
 
   // Items inside the panel's lazily built content, null until it first
   // opens. Code inside the content reaches its own ids directly.
@@ -73,8 +60,7 @@ Panel {
   // Hovering moves the same cursor, so only one thing is lit.
   readonly property var keyRows: {
     var rows = []
-    if (tasksView) return rows
-    if (addStage === "") rows.push([{kind: "subscriptions", index: 0}, {kind: "tasks", index: 0}])
+    if (addStage === "") rows.push([{kind: "tasks", index: 0}])
     var hero = []
     if (addButtonShown) hero.push({ kind: "add", index: 0 })
     if (addStage === "") hero.push({ kind: "launch", index: 0 })
@@ -368,6 +354,10 @@ Panel {
     { glyph: "󰣆", label: Commons.I18n.t("agents.app"), prompt: "Make me a new app for my Omarchy desktop. Ask me what it should do, then build it following the omarchy-app skill and install it so it shows up in the app launcher." }
   ]
 
+  function startTeam() {
+    startPrompt(TeamPrompt.build(Quickshell.env("HOME"), Quickshell.env("OMARCHY_PATH") + "/tools/agent-team/scripts/setup-backend"))
+  }
+
   function startPrompt(prompt) {
     root.close()
     Util.execArgv(["omarchy-agent-prompt", prompt])
@@ -407,8 +397,7 @@ Panel {
   function activateSelection() {
     var target = keyTarget
     if (!target) refreshNow()
-    else if (target.kind === "subscriptions") showTasks(false)
-    else if (target.kind === "tasks") showTasks(true)
+    else if (target.kind === "tasks") startTeam()
     else if (target.kind === "add") addStage !== "" ? cancelAdd() : addAccount()
     else if (target.kind === "choice") chooseAddProvider(addProviders[target.index].providerId)
     else if (target.kind === "launch") launchAgent()
@@ -882,10 +871,7 @@ Panel {
     nowMs = Date.now()
     if (panelFlick) panelFlick.contentY = 0
     usage.refreshLimits()
-    Qt.callLater(function() {
-      if (tasksView && tasksViewItem) tasksViewItem.focusForm()
-      else if (panel.loadedContent) panel.loadedContent.forceActiveFocus()
-    })
+    Qt.callLater(function() { if (panel.loadedContent) panel.loadedContent.forceActiveFocus() })
   }
 
   Main {
@@ -1000,9 +986,6 @@ Panel {
       property alias hero: hero
       property alias column: column
       property alias providerSections: providerSections
-      readonly property Item tasksViewItem: tasksLoader.item
-      blocked: root.tasksView
-      Keys.onEscapePressed: if (root.tasksView) root.close()
       implicitHeight: column.implicitHeight
       anchors.fill: parent
       reorderable: root.addStage === "" && !root.renaming
@@ -1102,49 +1085,23 @@ Panel {
             }
           }
 
-          Row {
+          Button {
             visible: root.addStage === ""
-            width: parent.width
-            spacing: Style.space(8)
-            Button {
-              text: "Subscriptions"
-              selected: !root.tasksView
-              hasCursor: root.hasKey("subscriptions")
-              focusable: true
-              onHovered: root.pointAt("subscriptions")
-              onClicked: root.showTasks(false)
-            }
-            Button {
-              text: "Tasks"
-              selected: root.tasksView
-              hasCursor: root.hasKey("tasks")
-              focusable: true
-              onHovered: root.pointAt("tasks")
-              onClicked: root.showTasks(true)
-            }
-          }
-
-          Loader {
-            id: tasksLoader
-            width: column.width
-            active: root.tasksLoaded
-            visible: root.tasksView
-            sourceComponent: Component {
-              TasksView {
-                active: root.opened && root.tasksView
-                onCloseRequested: root.close()
-              }
-            }
+            text: "Orchestrate"
+            hasCursor: root.hasKey("tasks")
+            focusable: true
+            onHovered: root.pointAt("tasks")
+            onClicked: root.startTeam()
           }
 
           AddView {
-            visible: !root.tasksView && (root.addStage !== "" || root.blankSlate)
+            visible: root.addStage !== "" || root.blankSlate
             width: column.width
           }
 
           Repeater {
             id: providerSections
-            model: !root.tasksView && root.addStage === "" ? root.providers : []
+            model: root.addStage === "" ? root.providers : []
 
             ProviderSection {
               required property var modelData
@@ -1157,12 +1114,12 @@ Panel {
 
           // ---------- Make something ----------
           PanelSeparator {
-            visible: !root.tasksView && root.addStage === "" && !root.blankSlate
+            visible: root.addStage === "" && !root.blankSlate
             foreground: root.foreground
           }
 
           Column {
-            visible: !root.tasksView && root.addStage === "" && !root.blankSlate
+            visible: root.addStage === "" && !root.blankSlate
             width: parent.width
             spacing: Style.space(12)
 

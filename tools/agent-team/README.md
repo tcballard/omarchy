@@ -1,6 +1,8 @@
 # Experimental native Agent Team
 
-Feature branch of the full Omarchy fork. Extends `shell/plugins/agents/Panel.qml` in place; the manifest stays `omarchy.agents`. Usage extraction, account management, provider defaults and subscription meters stay upstream. Adds Subscriptions / Tasks navigation, a project and brief form, lead and reviewer selection, running tasks, cancellation and combined results.
+Feature branch of the full Omarchy fork. Extends `shell/plugins/agents/Panel.qml` in place; the manifest stays `omarchy.agents`. Usage extraction, account management, provider defaults and subscription meters stay upstream. **Orchestrate** closes the panel and opens your default coding agent in your configured terminal through `omarchy-agent-prompt`, exactly like the Theme/Plugin starter actions.
+
+The terminal session asks for the project, brief and reviewer, then submits the review to the Rust broker and reads its status/results. The broker still runs the existing read-only lead/reviewer workflow; the terminal conversation is its front end, not a second QML form. The embedded Tasks screen and its polling processes have been removed. The terminal handoff is a seeded agent conversation, so its conversational behavior still needs live acceptance; backend permission and account controls remain enforced in Rust.
 
 ## XPS install
 
@@ -12,9 +14,9 @@ git clone --depth 1 --branch feat/agents-orchestration https://github.com/tcball
 
 This builds the Rust helper locally (installing the native `rust` package if Cargo is absent), backs up the installed Agents panel, applies only the Agents additions and helper, starts a systemd user service, then restarts the existing shell. No whole-OS branch switch. The installer requires the Agents files from upstream Quattro `a6dcc31b6429fcf25e9e6bf90179f84c602cbf4e`; mismatches abort before changing installed files. It disables the earlier extracted trial if present, so there is only one active Agents interface. Stable upstream is not changed remotely. Local Omarchy updates may replace the overlay; restore before updating.
 
-Open your existing Agents icon → Tasks. Check providers. Choose a specific, trusted project directory and lead provider. Start with a small review such as: “Review the error handling; delegate an independent review to the other provider and combine the concrete findings.” Both chosen providers must already be installed and signed in through their own CLIs. Choose Codex or Claude as lead and Grok as independent reviewer to use the new Grok adapter; the unselected third provider is not required. The helper never logs in, transfers tokens, switches accounts or chooses an alternate provider on failure. Accounts are pinned for the entire review when submitted; existing panel account controls still govern later reviews.
+Open your existing Agents icon → **Orchestrate**. Your normal default terminal and coding-agent session open. Tell it the specific project directory and review brief and choose an independent reviewer. Codex or Claude can lead; Grok can review. The conversation checks the broker's advertised capabilities and asks you to choose a supported lead if your current default cannot run the broker workflow. It does not silently switch accounts or providers.
 
-The lead receives bounded MCP tools to delegate to the other provider, poll its status and cancel it. The worker cannot delegate again or inspect unrelated task history. An omitted or failed independent review cannot produce a completed two-agent workflow. The lead writes the consolidated answer; individual child results remain inspectable.
+Both chosen providers must already be installed and signed in. The Rust broker pins their accounts when submitted. Closing the terminal leaves broker jobs running; reopen Orchestrate to ask for their status or cancellation. A first-time or unavailable backend can be set up from that conversation with the existing bundled setup script; failures stay visible.
 
 ## Restore
 
@@ -38,7 +40,7 @@ Inspected AgentWire at `6a4bd226a0e5c97346b82e12f3257b6e84a678ae` and WayfinderR
 
 Run `tools/agent-team/tests/run` and `bash test/shell.d/agents-panel-test.sh`. Deterministic provider executables exercise real broker/MCP calls; they do not contact providers or consume subscriptions. Tests cover both lead directions, retry deduplication and project boundaries, cancellation, output budgets, missing results, authentication failures, restart, malformed history and account snapshots. Installer tests use a disposable fake desktop.
 
-Before calling this usable on the XPS, check: original subscription meters/account controls; Tasks focus, scrolling, Escape and repeated opening; real Codex → Claude, Claude → Codex, Codex → Grok and Claude → Grok reviews; visible authentication/compatibility failures; cancellation; closing/reopening while work continues; shell restart; restore. Qt parsing and fixture tests do not establish real Quattro rendering, CLI compatibility or subscription interoperability. No live provider or XPS acceptance has been completed in this build environment.
+Before calling this usable on the XPS, check: original subscription meters/account controls; Orchestrate mouse/keyboard launch, panel dismissal, default terminal and agent selection, conversational input and reopening; real Codex → Claude, Claude → Codex, Codex → Grok and Claude → Grok reviews; visible authentication/compatibility failures; cancellation; closing/reopening while work continues; shell restart; restore. Qt parsing and fixture tests do not establish real Quattro rendering, CLI compatibility or subscription interoperability. No live provider or XPS acceptance has been completed in this build environment.
 
 ## Update an existing trial
 

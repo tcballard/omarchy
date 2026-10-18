@@ -9,7 +9,7 @@ systemctl --user show-environment >/dev/null
 [[ ! -e $backup && ! -e "$target/tools/agent-team" ]] || { echo 'An overlay already exists. Restore it before installing another build.' >&2; exit 1; }
 cd "$target/shell/plugins/agents"
 sha256sum --check --status "$source_root/tools/agent-team/baseline.sha256" || { echo 'Agents has changed from the supported upstream revision. Nothing installed; rebase the prototype first.' >&2; exit 1; }
-for name in BrokerClient.qml TaskCards.qml TasksView.qml TeamLabel.qml; do
+for name in TeamPrompt.js; do
   [[ ! -e $name ]] || { echo "Refusing to replace existing $name" >&2; exit 1; }
 done
 if ! command -v cargo >/dev/null; then omarchy-pkg-add rust; fi
@@ -19,22 +19,22 @@ chmod 700 "$backup"
 cp Panel.qml "$backup/Panel.qml"
 rollback() {
   cp "$backup/Panel.qml" "$target/shell/plugins/agents/Panel.qml"
-  rm -f "$target/shell/plugins/agents/"{BrokerClient,TaskCards,TasksView,TeamLabel}.qml
+  rm -f "$target/shell/plugins/agents/TeamPrompt.js"
   rm -rf "$target/tools/agent-team" "$backup"
 }
 trap rollback ERR
 if [[ -d ${XDG_CONFIG_HOME:-$HOME/.config}/omarchy/plugins/io.github.tcballard.agents ]]; then
   omarchy-plugin-disable io.github.tcballard.agents
 fi
-for name in Panel.qml BrokerClient.qml TaskCards.qml TasksView.qml TeamLabel.qml; do
+for name in Panel.qml TeamPrompt.js; do
   install -m644 "$source_root/shell/plugins/agents/$name" "$target/shell/plugins/agents/$name"
 done
 cp -r "$source_root/tools/agent-team/"{src,scripts,Cargo.toml,Cargo.lock,README.md,VERIFICATION.md,PROVIDERS.md,LICENSE} "$target/tools/agent-team/"
 mkdir -p "$target/tools/agent-team/bin"
 install -m755 "$source_root/tools/agent-team/target/release/omarchy-agent-team" "$target/tools/agent-team/bin/omarchy-agent-team"
 (cd "$target/tools/agent-team/bin" && sha256sum omarchy-agent-team > SHA256SUMS)
-(cd "$target/shell/plugins/agents" && sha256sum Panel.qml BrokerClient.qml TaskCards.qml TasksView.qml TeamLabel.qml) > "$backup/installed.sha256"
+(cd "$target/shell/plugins/agents" && sha256sum Panel.qml TeamPrompt.js) > "$backup/installed.sha256"
 trap - ERR
 bash "$target/tools/agent-team/scripts/setup-backend"
 omarchy-restart-shell
-printf 'Experimental Tasks installed into the existing Agents panel. Open Agents → Tasks.\nRestore: bash %q/tools/agent-team/scripts/restore\n' "$target"
+printf 'Experimental orchestration installed into the existing Agents panel. Open Agents → Orchestrate.\nRestore: bash %q/tools/agent-team/scripts/restore\n' "$target"

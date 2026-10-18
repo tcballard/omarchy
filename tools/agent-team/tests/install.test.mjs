@@ -22,13 +22,14 @@ test('Overlay installs and restores without replacing the manifest or usage/acco
       const original=execFileSync('git',['show',`a6dcc31b6429fcf25e9e6bf90179f84c602cbf4e:shell/plugins/agents/${name}`],{cwd:repo});
       await writeFile(join(target,'shell/plugins/agents',name),original);
     }
+    await writeFile(join(target,'shell/plugins/agents/BrokerClient.qml'),'unrelated file');
     for(const command of ['cargo','systemctl','omarchy-restart-shell'])await writeFile(join(bin,command),'#!/bin/bash\nexit 0\n',{mode:0o755});
     const env={...process.env,HOME:home,OMARCHY_PATH:target,XDG_STATE_HOME:join(home,'state'),XDG_CONFIG_HOME:join(home,'config'),PATH:bin+':'+process.env.PATH};
     const script=join(source,'tools/agent-team/scripts/install');
     execFileSync('bash',[script],{env});
     const unchanged=['Main.qml','Agent.qml','manifest.json'];
     for(const name of unchanged)assert.deepEqual(await readFile(join(target,'shell/plugins/agents',name)),execFileSync('git',['show',`a6dcc31b6429fcf25e9e6bf90179f84c602cbf4e:shell/plugins/agents/${name}`],{cwd:repo}));
-    assert.match(await readFile(join(target,'shell/plugins/agents/Panel.qml'),'utf8'),/TasksView/);
+    assert.match(await readFile(join(target,'shell/plugins/agents/Panel.qml'),'utf8'),/function startTeam/);
     assert.throws(()=>execFileSync('bash',[script],{env,stdio:'pipe'}),/overlay already exists/);
     const panel=join(target,'shell/plugins/agents/Panel.qml');const installed=await readFile(panel,'utf8');
     await writeFile(panel,installed+'\n// later edit\n');
@@ -37,6 +38,7 @@ test('Overlay installs and restores without replacing the manifest or usage/acco
     await writeFile(panel,installed);execFileSync('bash',[restore],{env});
     assert.deepEqual(await readFile(panel),execFileSync('git',['show','a6dcc31b6429fcf25e9e6bf90179f84c602cbf4e:shell/plugins/agents/Panel.qml'],{cwd:repo}));
     await assert.rejects(access(join(target,'tools/agent-team')));
+    assert.equal(await readFile(join(target,'shell/plugins/agents/BrokerClient.qml'),'utf8'),'unrelated file');
     await writeFile(panel,'new upstream panel');
     assert.throws(()=>execFileSync('bash',[script],{env,stdio:'pipe'}),/changed from the supported upstream/);
     assert.equal(await readFile(panel,'utf8'),'new upstream panel');
