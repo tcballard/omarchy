@@ -29,7 +29,7 @@ fi
 for name in Panel.qml BrokerClient.qml TaskCards.qml TasksView.qml TeamLabel.qml; do
   install -m644 "$source_root/shell/plugins/agents/$name" "$target/shell/plugins/agents/$name"
 done
-cp -r "$source_root/tools/agent-team/"{src,scripts,Cargo.toml,Cargo.lock,README.md,VERIFICATION.md,LICENSE} "$target/tools/agent-team/"
+cp -r "$source_root/tools/agent-team/"{src,scripts,Cargo.toml,Cargo.lock,README.md,VERIFICATION.md,PROVIDERS.md,LICENSE} "$target/tools/agent-team/"
 mkdir -p "$target/tools/agent-team/bin"
 install -m755 "$source_root/tools/agent-team/target/release/omarchy-agent-team" "$target/tools/agent-team/bin/omarchy-agent-team"
 (cd "$target/tools/agent-team/bin" && sha256sum omarchy-agent-team > SHA256SUMS)

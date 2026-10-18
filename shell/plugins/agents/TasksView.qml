@@ -37,7 +37,7 @@ Column {
     id: action
     onCompleted: function(value) {
       if (value.providers) {
-        root.providers = value.providers.map(function(p) { return p.provider + ": " + (p.installed ? p.version : "not installed") }).join("\n")
+        root.providers = value.providers.map(function(p) { return p.provider + ": " + (p.installed ? p.version : "not installed") + " · " + p.executionStatus }).join("\n")
       } else if (value.id) root.selectedId = value.id
       root.notice = ""
       root.refresh()

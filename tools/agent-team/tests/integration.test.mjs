@@ -149,3 +149,20 @@ test('Top-level retry keys cannot return work from a different project',async()=
     await h.done(start.data.id);
   }finally{await h.close()}
 });
+
+
+test('Discovery names all four subscriptions without advertising unimplemented adapters',async()=>{
+  const h=await harness();try{
+    const doctor=await h.rpc('doctor');assert.equal(doctor.ok,true);
+    assert.deepEqual(doctor.data.providers.map(p=>p.provider),['codex','claude','grok','kimi']);
+    for(const p of doctor.data.providers){
+      assert.match(p.authentication,/not verified by discovery/);
+      if(['grok','kimi'].includes(p.provider)){
+        assert.equal(p.supported,false);assert.deepEqual(p.roles,[]);
+        assert.match(p.executionStatus,/adapter pending/);
+        const task=await h.rpc('start',{provider:p.provider,cwd:h.cwd,task:'review'});
+        assert.equal(task.ok,false);assert.match(task.error,/no execution adapter/);
+      }
+    }
+  }finally{await h.close()}
+});

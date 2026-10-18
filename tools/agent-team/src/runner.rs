@@ -98,13 +98,32 @@ pub fn default_provider() -> Result<String> {
     }
 }
 pub fn doctor() -> Value {
-    let providers:Vec<Value>=["codex","claude"].iter().map(|p|{
-        match executable(p){Ok(path)=>{
-            let mut c=Command::new(&path);c.arg("--version");
-            let version=probe(c);
-            json!({"provider":p,"installed":true,"version":version.as_deref().unwrap_or("probe failed"),"authentication":"Uses the selected CLI sign-in; validated when a task starts","supported":true})
-        },Err(e)=>json!({"provider":p,"installed":false,"supported":true,"error":e})}
-    }).collect();
+    let providers: Vec<Value> = ["codex", "claude", "grok", "kimi"]
+        .iter()
+        .map(|p| {
+            let supported = matches!(*p, "codex" | "claude");
+            let mut row = json!({
+                "provider":p, "supported":supported,
+                "roles":if supported {vec!["lead", "reviewer"]} else {vec![]},
+                "authentication":"Uses this provider's own CLI sign-in; not verified by discovery",
+                "executionStatus":if supported {"fixture-tested; live acceptance required"} else {"adapter pending; detected CLI is not execution support"}
+            });
+            match executable(p) {
+                Ok(path) => {
+                    let mut c = Command::new(path);
+                    c.arg("--version");
+                    let version = probe(c);
+                    row["installed"] = json!(true);
+                    row["version"] = json!(version.as_deref().unwrap_or("probe failed"));
+                }
+                Err(e) => {
+                    row["installed"] = json!(false);
+                    row["error"] = json!(e);
+                }
+            }
+            row
+        })
+        .collect();
     json!({"providers":providers,"default":default_provider().ok(),"mode":"read-only","maxActiveTasks":4,"maxDelegationDepth":1})
 }
 pub fn selected_home(provider: &str) -> Result<Option<String>> {
